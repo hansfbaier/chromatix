@@ -5,24 +5,31 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 """
-LUNA USB device core (usb_luna_core.py) in Amaranth simulation, driven at the UTMI level by LUNA's
+LiteUSB USB device core (usb_core.py) in Migen simulation, driven at the UTMI level by LiteUSB's
 USBDeviceTest host model, with a Python model of the Migen side (descriptor ROM / class handlers /
-alternate settings). Skipped when LUNA/Amaranth are not installed.
+alternate settings).
 """
 
 import pytest
 
-amaranth = pytest.importorskip("amaranth")
-pytest.importorskip("luna")
+pytest.importorskip("liteusb")
 
-from amaranth.sim import Passive
+from liteusb.tests.device_test import USBDeviceTest
+from liteusb.tests.test_case   import usb_domain_test_case
+from liteusb.tests.contrib     import usb_packet
+from liteusb.gateware.usb.usb2 import USBPacketID
 
-from luna.gateware.test.usb2  import USBDeviceTest
-from luna.gateware.test.utils import usb_domain_test_case
-from luna.gateware.usb.usb2   import USBPacketID
+from chromatix.gateware.usb_core import USBDeviceCore
+from chromatix.gateware.usb_desc import USBDescriptorsLayout
 
-from chromatix.gateware.usb_luna_core import LUNADeviceCore
-from chromatix.gateware.usb_desc      import USBDescriptorsLayout
+# Helpers ------------------------------------------------------------------------------------------
+
+def sof_packet(frame):
+    """SOF token (frame number + CRC5)."""
+    packet  = usb_packet.encode_pid(0b0101) # SOF PID (4-bit value, LUNA/liteusb encoding).
+    packet += "{0:011b}".format(frame)[::-1]
+    packet += "{0:05b}".format(usb_packet.crc5_token(frame & 0x7f, (frame >> 7) & 0xf))[::-1]
+    return packet
 
 # Migen Side Model ---------------------------------------------------------------------------------
 
@@ -50,18 +57,18 @@ def descriptors():
     }
 
 class _Base(USBDeviceTest):
-    FRAGMENT_UNDER_TEST = LUNADeviceCore
+    FRAGMENT_UNDER_TEST = USBDeviceCore
     FRAGMENT_ARGUMENTS  = {}
 
     def setUp(self):
         super().setUp()
         self.received  = []
         self.inf_sets  = []
-        self.sim.add_sync_process(self.migen_model, domain="usb")
+        self._sync_processes.append(self.migen_model())
 
     def migen_model(self):
         """Migen handlers model: txdat = byte at cdata_ofs (next byte loaded with txpop)."""
-        yield Passive()
+        yield "passive" # Run for the whole simulation, without keeping it alive.
         # Idle bus (J): no bus reset/High-Speed chirp during the test.
         yield self.utmi.line_state.eq(0b01)
         dut   = self.dut
@@ -114,7 +121,7 @@ class _Base(USBDeviceTest):
 
 # Tests --------------------------------------------------------------------------------------------
 
-class TestLUNADescriptors(_Base):
+class TestCoreDescriptors(_Base):
     @usb_domain_test_case
     def test_get_descriptors(self):
         yield from self.advance_cycles(10)
@@ -138,11 +145,11 @@ class TestLUNADescriptors(_Base):
         handshake, data = yield from self.get_descriptor(0x0f, length=64)
         self.assertEqual(handshake, USBPacketID.STALL)
 
-class TestLUNAStandardRequests(_Base):
+class TestCoreStandardRequests(_Base):
     @usb_domain_test_case
     def test_address_configuration_interfaces(self):
         yield from self.advance_cycles(10)
-        # SET_ADDRESS / SET_CONFIGURATION handled by LUNA.
+        # SET_ADDRESS / SET_CONFIGURATION handled by LiteUSB.
         yield from self.set_address(5)
         self.assertEqual((yield from self.set_configuration(1)), USBPacketID.DATA1)
         handshake, data = yield from self.get_descriptor(1, length=18)
@@ -154,7 +161,7 @@ class TestLUNAStandardRequests(_Base):
         handshake, data = yield from self.control_request_in(0x81, 10, index=1, length=1)
         self.assertEqual(data, [2])
 
-class TestLUNAClassRequests(_Base):
+class TestCoreClassRequests(_Base):
     @usb_domain_test_case
     def test_class_requests(self):
         yield from self.advance_cycles(10)
@@ -173,7 +180,7 @@ class TestLUNAClassRequests(_Base):
         handshake, data = yield from self.control_request_in(0xa1, 0x85, index=1, length=1)
         self.assertEqual(handshake, USBPacketID.STALL)
 
-class TestLUNANakEndpoints(_Base):
+class TestCoreNakEndpoints(_Base):
     @usb_domain_test_case
     def test_interrupt_endpoints_nak(self):
         yield from self.advance_cycles(10)
@@ -181,11 +188,11 @@ class TestLUNANakEndpoints(_Base):
             pid, data = yield from self.in_transaction(endpoint=ep)
             self.assertEqual(pid, USBPacketID.NAK)
 
-class TestLUNAIsochronous(_Base):
+class TestCoreIsochronous(_Base):
     def setUp(self):
         super().setUp()
-        self.sim.add_sync_process(self.stream_model_ep2, domain="usb")
-        self.sim.add_sync_process(self.stream_model_ep5, domain="usb")
+        self._sync_processes.append(self.stream_model_ep2())
+        self._sync_processes.append(self.stream_model_ep5())
 
     def stream_model_ep2(self):
         yield from self.stream_model(2)
@@ -194,12 +201,11 @@ class TestLUNAIsochronous(_Base):
         yield from self.stream_model(5)
 
     def send_sof(self, frame):
-        from luna.gateware.test.contrib import usb_packet
-        yield from self.provide_bits(usb_packet.sof_packet(frame))
+        yield from self.provide_bits(sof_packet(frame))
 
     def stream_model(self, n):
         """Byte counter stream on EP n (always valid)."""
-        yield Passive()
+        yield "passive" # Run for the whole simulation, without keeping it alive.
         count = 0
         while True:
             yield getattr(self.dut, f"ep{n}_valid").eq(1)
@@ -223,15 +229,15 @@ class TestLUNAIsochronous(_Base):
         yield from self.interpacket_delay()
         pid0, data0 = yield from self.receive_iso(2)
         pid1, data1 = yield from self.receive_iso(2)
-        self.assertEqual((pid0, len(data0)), (USBPacketID.DATA1.byte(), 1024))
-        self.assertEqual((pid1, len(data1)), (USBPacketID.DATA0.byte(), 1024))
+        self.assertEqual((pid0, len(data0)), (USBPacketID.byte(USBPacketID.DATA1), 1024))
+        self.assertEqual((pid1, len(data1)), (USBPacketID.byte(USBPacketID.DATA0), 1024))
         self.assertEqual(data0 + data1, [i & 0xff for i in range(2048)])
         # 12 bytes (header only): a single DATA0 packet.
         yield self.dut.ep2_bytes.eq(12)
         yield from self.send_sof(2)
         yield from self.interpacket_delay()
         pid, data = yield from self.receive_iso(2)
-        self.assertEqual((pid, len(data)), (USBPacketID.DATA0.byte(), 12))
+        self.assertEqual((pid, len(data)), (USBPacketID.byte(USBPacketID.DATA0), 12))
         self.assertEqual(data, [i & 0xff for i in range(2048, 2060)])
 
     @usb_domain_test_case
@@ -241,16 +247,16 @@ class TestLUNAIsochronous(_Base):
         yield from self.send_sof(1)
         yield from self.interpacket_delay()
         pid, data = yield from self.receive_iso(5)
-        self.assertEqual((pid, len(data)), (USBPacketID.DATA0.byte(), 24))
+        self.assertEqual((pid, len(data)), (USBPacketID.byte(USBPacketID.DATA0), 24))
 
-class TestLUNABulk(_Base):
+class TestCoreBulk(_Base):
     def setUp(self):
         super().setUp()
         self.bulk_received = []
-        self.sim.add_sync_process(self.bulk_sink, domain="usb")
+        self._sync_processes.append(self.bulk_sink())
 
     def bulk_sink(self):
-        yield Passive()
+        yield "passive" # Run for the whole simulation, without keeping it alive.
         dut = self.dut
         yield dut.ep3_out_ready.eq(1)
         while True:
@@ -281,7 +287,7 @@ class TestLUNABulk(_Base):
         pid, data = yield from self.in_transaction(endpoint=3)
         self.assertEqual(bytes(data), b"world")
 
-class TestLUNAResend(_Base):
+class TestCoreResend(_Base):
     @usb_domain_test_case
     def test_in_packet_resend(self):
         """An EP0 IN packet not ACK'ed by the host is resent (same PID and data)."""
@@ -299,11 +305,11 @@ class TestLUNAResend(_Base):
             yield from self.advance_cycles(8)
             packets.append((pid, data[:-2]))
         self.assertEqual(packets[0], packets[1])                       # Resent.
-        self.assertEqual(packets[0][0], USBPacketID.DATA1.byte())
+        self.assertEqual(packets[0][0], USBPacketID.byte(USBPacketID.DATA1))
         self.assertEqual(packets[0][1], cfg[:64])
-        self.assertEqual(packets[2], (USBPacketID.DATA0.byte(), cfg[64:128])) # Then continues.
+        self.assertEqual(packets[2], (USBPacketID.byte(USBPacketID.DATA0), cfg[64:128])) # Then continues.
 
-class TestLUNAAbort(_Base):
+class TestCoreAbort(_Base):
     @usb_domain_test_case
     def test_setup_aborts_transfer(self):
         """A SETUP aborts an abandoned control transfer: the new request is answered."""
@@ -323,7 +329,7 @@ class TestLUNAAbort(_Base):
         handshake, data = yield from self.control_request_in(0xa1, 0x81, value=0x0100, index=1, length=34)
         self.assertEqual(handshake, USBPacketID.ACK)
 
-class TestLUNAShortIn(_Base):
+class TestCoreShortIn(_Base):
     @usb_domain_test_case
     def test_short_in_request(self):
         """IN requests shorter than the prefetch (handler done before the IN token) are answered."""

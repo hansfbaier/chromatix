@@ -1,8 +1,8 @@
 # ChromatiX Roadmap
 
-The migration is done ([MIGRATION.md](MIGRATION.md)): no encrypted/vendor IP is left and only the
-MiSTer Game Boy core stays in Verilog, and the USB device core stays on LUNA (Amaranth, converted to
-Verilog at build time). Next steps:
+The migration is done ([MIGRATION.md](MIGRATION.md)): no encrypted/vendor IP is left, only the
+MiSTer Game Boy core stays in Verilog, and the USB device core is LiteUSB (the native LiteX/Migen
+port of LUNA). Next steps:
 
 ## LiteX dev board demos
 

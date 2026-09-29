@@ -23,9 +23,10 @@ setup(
     install_requires              = [
         "litex",
         "litei2c",
-        # LUNA USB 2.0 device core (Amaranth, converted to Verilog at build time).
-        "amaranth==0.5.8",
-        "luna-usb==0.2.3",
+        # LiteUSB USB 2.0 device core (native Migen/LiteX port of LUNA, not on PyPI: a local
+        # checkout/editable install is expected, as the other LiteX ecosystem cores; CI installs
+        # the master branch from GitHub).
+        "liteusb",
         "usb-protocol==0.9.2",
     ],
     packages                      = find_packages(exclude=["test*"]),

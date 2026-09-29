@@ -9,8 +9,8 @@ and rebuilt with [LiteX](https://github.com/enjoy-digital/litex) (ChromatiX: Chr
 
 - **One Python script** (`chromatix.py`) replaces the Gowin TCL project.
 - **No encrypted/vendor IP**: PLLs, FIFOs, CSC, PSRAM, video, system monitor and USB (PHY + device)
-  are open LiteX/Migen cores or [LUNA](https://github.com/greatscottgadgets/luna); only the MiSTer
-  Game Boy core stays in Verilog.
+  are open LiteX/Migen cores or [LiteUSB](https://github.com/hansfbaier/liteusb) (the native
+  LiteX/Migen port of LUNA); only the MiSTer Game Boy core stays in Verilog.
 - **Upstream**: the USB 2.0 soft PHY and the OPI PSRAM controller written for this design are part of
   LiteX, and the Chromatic is a [litex-boards](https://github.com/litex-hub/litex-boards) target.
 - **Same features as the original**, plus UVC capture at 320x288 (exact 2x2), a debug bridge (virtual
@@ -31,7 +31,7 @@ and rebuilt with [LiteX](https://github.com/enjoy-digital/litex) (ChromatiX: Chr
  ESP32 ◄──────►│          │                 ┌────────┴─────────┐   ┌─────────▼──────────┐  │
  (QSPI · UART) │          │                 │ QSPI slave ·     │   │ USB device         │  │
                │          │                 │ system monitor   │   │ UVC · UAC · CDC    │  │
-               │          │                 └──────────────────┘   │ LUNA core          ├──┼──► USB 2.0
+               │          │                 └──────────────────┘   │ LiteUSB core       ├──┼──► USB 2.0
                │          ├─────────────── audio ─────────────────►│ LiteX UTMI PHY     │  │
                │ ┌────────▼────────┐                               └────────────────────┘  │
  Codec ◄───────│ │ I2S · LiteI2C   │                                                       │
@@ -41,9 +41,9 @@ and rebuilt with [LiteX](https://github.com/enjoy-digital/litex) (ChromatiX: Chr
                └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-- USB: LiteX UTMI PHY (GW5A SerDes, HS + FS) + LUNA USB 2.0 device core (Amaranth, converted to
-  Verilog at build time) + Migen class logic: UVC (320x288/160x144), UAC (44.1kHz), CDC-ACM bridged
-  to the ESP32 UART.
+- USB: LiteX UTMI PHY (GW5A SerDes, HS + FS) + LiteUSB USB 2.0 device core (native Migen/LiteX port
+  of LUNA) + Migen class logic: UVC (320x288/160x144), UAC (44.1kHz), CDC-ACM bridged to the ESP32
+  UART.
 - Step-by-step migration, clock domains and ported blocks: [doc/MIGRATION.md](doc/MIGRATION.md);
   next steps: [doc/ROADMAP.md](doc/ROADMAP.md).
 
@@ -77,7 +77,7 @@ Requires [LiteX](https://github.com/enjoy-digital/litex) (`litex_setup.py`, rece
 
 ```bash
 git submodule update --init --recursive   # MiSTer Game Boy core.
-pip3 install --user -e .                  # ChromatiX + pinned Amaranth/LUNA.
+pip3 install --user -e .                  # ChromatiX + LiteUSB.
 
 ./chromatix.py --build --no-compile                               # Generate only.
 ./chromatix.py --gowin-path ~/tools/gowin_1.9.12.04/IDE --build   # Full build.
@@ -168,8 +168,9 @@ ls build/sim/frames
 - The [MiSTer Game Boy core](https://github.com/MiSTer-devel/Gameboy_MiSTer) contributors.
 - The 260+ [LiteX](https://github.com/enjoy-digital/litex) contributors who, over 10+ years (building
   on [Migen](https://github.com/m-labs/migen) from M-Labs), made a port like this possible with ease.
-- [LUNA](https://github.com/greatscottgadgets/luna) (Great Scott Gadgets) and
-  [Amaranth](https://github.com/amaranth-lang/amaranth): the USB 2.0 device core.
+- [LUNA](https://github.com/greatscottgadgets/luna) (Great Scott Gadgets): the USB 2.0 device core,
+  and [LiteUSB](https://github.com/hansfbaier/liteusb) (Hans Baier): its native LiteX/Migen port used
+  here.
 - [openFPGALoader](https://github.com/trabucayre/openFPGALoader), [Yosys](https://github.com/YosysHQ/yosys),
   [Verilator](https://github.com/verilator/verilator) and [three.js](https://threejs.org/).
 - [germaneguise](https://github.com/germaneguise): the 320x288 USB capture idea

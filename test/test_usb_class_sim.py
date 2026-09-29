@@ -657,7 +657,7 @@ def test_uvc_video_late_start(monkeypatch):
     assert complete and complete[-1] == len(src_frames) - 1
 
 class _UVCIsoBench(LiteXModule):
-    """UVCVideo + the txact emulation of USBDevice (LUNA endpoint requested -> finished)."""
+    """UVCVideo + the txact emulation of the core (LiteUSB endpoint requested -> finished)."""
     def __init__(self, frames):
         self.uvc       = uvc = UVCVideo(frames=frames)
         self.requested = Signal()

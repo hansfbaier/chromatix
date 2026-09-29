@@ -39,13 +39,13 @@
   <h1 class="o" id="title"><span class="chroma">Chromati</span><span class="x">X</span></h1>
   <p class="o" id="sub">The ModRetro Chromatic FPGA design,<br>freed and rebuilt with open-source LiteX.</p>
   <div class="o" id="pills">
-    <span class="pill g"><i></i>100% open source: LiteX · Migen · LUNA · openFPGALoader</span>
+    <span class="pill g"><i></i>100% open source: LiteX · Migen · LiteUSB · openFPGALoader</span>
     <span class="pill g"><i></i>Encrypted vendor IP → open cores, upstreamed to LiteX</span>
     <span class="pill"><i></i>Game Boy ROMs straight from your PC</span>
     <span class="pill"><i></i>A LiteX dev board in your pocket: RISC-V, firmware</span>
     <span class="pill v"><i></i>AI-ready: USB video + virtual buttons → agentic dev</span>
   </div>
-  <div class="o" id="credits">Thanks: <b>ModRetro</b> (Chromatic, original FPGA design) · <b>MiSTer</b> GB core · <b>10+ years of LiteX contributors</b> · <b>LUNA</b> · <b>Tangram Games</b> (Tobu Tobu Girl DX, CC-BY)</div>
+  <div class="o" id="credits">Thanks: <b>ModRetro</b> (Chromatic, original FPGA design) · <b>MiSTer</b> GB core · <b>10+ years of LiteX contributors</b> · <b>LUNA/LiteUSB</b> · <b>Tangram Games</b> (Tobu Tobu Girl DX, CC-BY)</div>
   <div class="o" id="cta">github.com/<b>enjoy-digital/chromatix</b></div>
   <img class="o" id="litex" src="litex.svg">
   <div class="o" id="capbg"></div>
@@ -458,7 +458,7 @@ const CODE = [
   { s: [[T_, '        self.vcart = '], [F_, 'VirtualCart'], [T_, '(memory.vcart_port, ...)']], tile: 6 },
   { s: [[T_, '        self.specials += '], [F_, 'Instance'], [T_, '('], [S_, '"emu_system_top"'], [T_, ', ...)']], tile: 0 },
   { s: [[T_, '        self.uartbone = '], [F_, 'UARTBone'], [T_, '(phy=cdc_phy, ...)']], tile: 7 },
-  { s: [[T_, '        self.usb = '], [F_, 'USBDevice'], [T_, '(platform, clk_24, usb, ...)'], [C_, ' # LUNA']], tile: 5 },
+  { s: [[T_, '        self.usb = '], [F_, 'USBDevice'], [T_, '(platform, clk_24, usb, ...)'], [C_, ' # LiteUSB']], tile: 5 },
   { s: [[C_, '        # next: RISC-V, AI, your core...']], tile: 8 },
   { s: [] },
   { s: [[S_, '$ '], [T_, './chromatix.py --build --flash']], build: true },
@@ -633,7 +633,7 @@ const CORES = [
   { t: 'Memory', s: 'OPI PSRAM · LiteX', c: '#34d9ff' },
   { t: 'ST7785', s: 'LCD init', c: '#34d9ff' },
   { t: 'LiteI2C', s: 'codec control', c: '#34d9ff' },
-  { t: 'USB 2.0', s: 'LiteX PHY · LUNA', c: '#34d9ff' },
+  { t: 'USB 2.0', s: 'LiteX PHY · LiteUSB', c: '#34d9ff' },
   { t: 'Virtual Cart', s: 'ROMs from your PC', c: '#6cf06a' },
   { t: 'UARTBone', s: 'USB debug bridge', c: '#34d9ff' },
   { t: 'RISC-V · AI', s: 'or your core', c: '#b98cff', dash: true },
@@ -742,7 +742,7 @@ const CAPTIONS = [
   [5.8, 6.85, '<span class="r">Encrypted vendor IP</span><span class="dim">: out.</span>'],
   [6.95, 7.9, '<span class="g">100% open source</span><span class="dim">: the console,</span> <span class="g">freed.</span>'],
   [8.3, 11.3, '<span class="c">One Python script.</span>'],
-  [11.5, 14.4, '<span class="dim">Open cores:</span> <span class="c">USB 2.0 PHY</span> · <span class="c">OPI PSRAM</span> · <span class="c">LUNA</span>'],
+  [11.5, 14.4, '<span class="dim">Open cores:</span> <span class="c">USB 2.0 PHY</span> · <span class="c">OPI PSRAM</span> · <span class="c">LiteUSB</span>'],
   [14.7, 16.9, 'Build. Flash with <span class="c">openFPGALoader</span>. <span class="g">Boot.</span>'],
   [17.25, 19.0, '<span class="v">AI in the loop:</span> <span class="dim">live video over USB</span> <span class="c">(UVC)</span> <span class="dim">→ agent</span>'],
   [19.15, 21.0, '<span class="dim">Agent →</span> <span class="c">buttons</span> <span class="dim">(UARTBone):</span> <span class="v">fully agentic dev.</span>'],

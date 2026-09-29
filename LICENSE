@@ -25,7 +25,7 @@ Third-party components (under their own licenses):
 - chromatix/verilog/Gameboy_MiSTer/ (git submodule): MiSTer Game Boy core (GPL, see its
   sources).
 - Python dependencies (not included): LiteX (BSD-2-Clause), Migen (BSD-2-Clause),
-  Amaranth (BSD-2-Clause), LUNA (BSD-3-Clause).
+  LiteUSB (BSD-3-Clause), LUNA (BSD-3-Clause, the core LiteUSB ports).
 
 Bitstreams built from this repository include GPL parts: they must be distributed under the
 terms of the GPL.

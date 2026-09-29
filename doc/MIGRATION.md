@@ -10,11 +10,12 @@ Each block went through the same loop:
 1. **Isolate.** Cut the block out of the legacy RTL (or split it into smaller sub-blocks) and keep
    the original as the reference.
 2. **Port** it to LiteX/Migen, reusing LiteX cores where they exist (PLL, RS232PHY, LiteI2C, stream
-   FIFOs, UARTBone...), or integrating an open core (LUNA for the USB device).
+   FIFOs, UARTBone...), or integrating an open core (LiteUSB, the native LiteX/Migen port of LUNA,
+   for the USB device).
 3. **Prove it equivalent** to the original: formal equivalence checks with Yosys
    ([`test/eqcheck.py`](../test/eqcheck.py): bounded checks, plus unbounded PDR proofs, against the
    original Verilog read from the git history), plus behavioural simulations
-   (pytest: Migen simulations, Amaranth simulation of the LUNA integration; a Verilator co-simulation
+   (pytest: Migen simulations of the USB device core integration; a Verilator co-simulation
    was used for the endpoint FIFOs of the former Gowin controller path).
 4. **Check on hardware** with the automated loop: build/flash, then drive the console from the host
    through the debug bridge (UARTBone over USB CDC: virtual buttons, status/debug registers, UTMI
@@ -30,7 +31,7 @@ Each block went through the same loop:
 | C | Glue, clocking, I2C/I2S/UART, codec/LCD init, system monitor, battery ADC; encrypted FIFOs, CSC, divider | done |
 | D | Memory: x8 OPI PSRAM controller/PHY, BIST, arbiter, QSPI slave, burst writers/readers | done |
 | E | Video pipeline: frame blend, OSD/overlays, color correction, ST7785 panel timing | done |
-| F | USB: class logic, UTMI PHY (LiteX USB2PHY), device controller (LUNA); UVC 320x288 | done |
+| F | USB: class logic, UTMI PHY (LiteX USB2PHY), device controller (LiteUSB); UVC 320x288 | done |
 
 ## Clock Domains
 
@@ -42,6 +43,7 @@ Each block went through the same loop:
 | gClk   | ~8.39 MHz   | GW5APLL    | Audio I2S, timers, UART, USB   |
 | xClk   | ~67.11 MHz  | GW5APLL    | Cart detect, LED control       |
 | phy    | ~60 MHz     | USB PLL    | USB UART resync, ESP32 boot    |
+| usb    | = phy       | alias      | LiteUSB USB device core (own reset) |
 | sys    | = gClk      | alias      | LiteX CSR bus, debug bridge    |
 
 ## What's in LiteX (Python/Migen)
@@ -59,7 +61,10 @@ Each block went through the same loop:
 - **Buttons**: 8-channel debouncer (3-stage sampling + 15-bit counter).
 - **Memory system**: AP Memory OPI x8 PSRAM controller with GW5A OSER4/IDES4/IODELAY PHY, startup BIST, ESP32 QSPI slave (GW5A DFFC for the CS asynchronous reset), multi-port round-robin arbiter, Game Boy framebuffer and ESP32 QSPI burst writers (LiteX async FIFOs), framebuffer/OSD line readers.
 - **USB 2.0 PHY**: LiteX USB2PHY (UTMI, High-Speed 480Mbps + Full-Speed, GW5A SerDes).
-- **USB 2.0 device core**: [LUNA](https://github.com/greatscottgadgets/luna)'s USB 2.0 device (Amaranth, BSD-3, converted to Verilog at build time with LiteX's Amaranth2VConverter): High-Speed reset/chirp, packets, CRC, data toggles/handshakes, standard requests, control/isochronous (high-bandwidth)/bulk endpoints, with a request bridge to the Migen EP0 handlers.
+- **USB 2.0 device core**: [LiteUSB](https://github.com/hansfbaier/liteusb), the native LiteX/Migen
+  port of [LUNA](https://github.com/greatscottgadgets/luna)'s USB 2.0 device (BSD-3): High-Speed
+  reset/chirp, packets, CRC, data toggles/handshakes, standard requests, control/isochronous
+  (high-bandwidth)/bulk endpoints, with a request bridge to the Migen EP0 handlers.
 - **USB composite device** (UVC + UAC + CDC-ACM): USB PLL, descriptors, class requests, UVC YUYV packing/packetizer (color space convertor + video FIFO), UAC endpoint, CDC UART at the host baudrate.
 - **UVC 320x288**: the UVC stream is offered at **320x288** (default, 2x2 integer upscale: each YUY2 chroma pair is a single source pixel, so colors are exact) and at native 160x144, selected by the host (bFrameIndex). Lines are replayed at 60MHz from line buffers; 320x288 uses high-bandwidth isochronous transfers (2048 bytes per micro-frame, DATA1 -> DATA0, alternate setting 2) and runs at 60 fps. Sizes are selected with `--uvc-sizes` (ex: `--uvc-sizes 160x144` for the original single size).
 - **SoC**: LiteX SoCMini (CSR bus in the sys = gClk domain) with debug/automation registers (virtual buttons, status) and an optional UARTBone debug bridge over the USB CDC port.
@@ -97,5 +102,6 @@ Each block went through the same loop:
 | 27 | USB 2.0 PHY (HS + FS) → LiteX USB2PHY | `usb2_0_softphy*.v` (encrypted IP) |
 | 28 | UVC 320x288 (2x2 upscale, high-bandwidth isochronous) alongside 160x144 | |
 | 29 | Gowin USB 2.0 Device Controller → LUNA USB 2.0 device core (Amaranth, converted at build time) + Migen EP0 bridge | `usb_device_controller*` (encrypted IP / pre-synthesized netlist) |
+| 30 | LUNA (Amaranth, converted to Verilog at build time) → LiteUSB USB 2.0 device core (native LiteX/Migen port), Migen EP0 request bridge over the LiteUSB control endpoint | Amaranth/`Amaranth2VConverter` build step, LUNA/Amaranth dependencies |
 
 Next steps: [ROADMAP.md](ROADMAP.md).

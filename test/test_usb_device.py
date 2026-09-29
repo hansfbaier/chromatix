@@ -6,7 +6,7 @@
 
 """
 USB composite device elaboration (Gowin primitives can't be simulated): Verilog conversion with the
-LUNA device core (Amaranth -> Verilog), the LiteX PHY and the UTMI/pad connections.
+LiteUSB device core (native Migen), the LiteX PHY and the UTMI/pad connections.
 """
 
 import os
@@ -18,9 +18,11 @@ from migen import *
 
 from chromatix import Platform
 
-pytest.importorskip("luna")
+pytest.importorskip("liteusb")
+pytest.importorskip("litex.soc.cores.usb2_phy.phy")
 
-from chromatix.gateware.usb_device import USBDevice
+from chromatix.gateware.usb_core    import USBDeviceCore
+from chromatix.gateware.usb_device  import USBDevice
 
 # Helpers ------------------------------------------------------------------------------------------
 
@@ -36,7 +38,7 @@ def elaborate(output_dir):
     platform.output_dir = str(output_dir)
     top      = _Top(platform)
     verilog  = str(platform.get_verilog(top, name="usb_device"))
-    return platform, verilog
+    return top, platform, verilog
 
 def instance(verilog, module, name=r"\w+"):
     """Returns the port connections {port: net} of an instance."""
@@ -47,20 +49,17 @@ def instance(verilog, module, name=r"\w+"):
 # Tests --------------------------------------------------------------------------------------------
 
 def test_usb_device_elaboration(tmp_path):
-    """LUNA core + PLL + LiteX USB2PHY instantiated, UTMI connected between the core and the PHY."""
-    platform, verilog = elaborate(tmp_path)
-    core = instance(verilog, "luna_usb_device")
-    assert core["usb_clk"].strip() == "phy_clk"
+    """LiteUSB core + PLL + LiteX USB2PHY instantiated, UTMI connected between the core and the PHY."""
+    top, platform, verilog = elaborate(tmp_path)
+    assert isinstance(top.usb.core, USBDeviceCore)
     assert "PLLA" in verilog and "usb_pll" in verilog
-    # Converted LUNA core registered as a source, no Gowin USB IP.
+    # Native LiteUSB core elaborated in (no converted Verilog core source), no Gowin USB IP.
     sources = [os.path.basename(path) for path, language, library in platform.sources]
-    assert "luna_usb_device.v" in sources
+    assert not [source for source in sources if "luna" in source]
     assert "USB_Device_Controller_Top" not in verilog
-
-    utmi = {port: core[f"utmi_{port}"].strip() for port in ["tx_data", "tx_valid", "tx_ready",
-        "rx_data", "line_state", "xcvr_select"]}
-    for net in utmi.values():
-        assert net and not re.fullmatch(r"\d+'d\d+", net) # Connected, not tied.
+    # LiteUSB core clocked by its "usb" clock domain (the 60MHz UTMI clock).
+    assert re.search(r"always @\(posedge usb_clk\)", verilog)
+    assert re.search(r"\busb_rst\b", verilog)
 
     # LiteX USB2PHY: GW5A SerDes primitives (lowered generic specials), SerDes clock net used by the
     # timing constraints.

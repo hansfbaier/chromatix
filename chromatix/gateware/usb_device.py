@@ -9,12 +9,13 @@
 Chromatic USB composite device: UVC (video) + UAC (audio) + CDC-ACM (UART bridge), port of
 usbuvcuart_top.v.
 
-The USB 2.0 protocol engine is LUNA (usb_luna.py/usb_luna_core.py, Amaranth, converted to Verilog
-at build time with LiteX's Amaranth2VConverter); the PLL, UTMI PHY (USB2PHY), descriptors ROM,
-class request handlers, UVC/UAC data paths and CDC UART are LiteX/Migen.
+The USB 2.0 protocol engine is LiteUSB (usb_core.py, native Migen/LiteX port of LUNA); the PLL,
+UTMI PHY (USB2PHY), descriptors ROM, class request handlers, UVC/UAC data paths and CDC UART are
+LiteX/Migen.
 
-Clock domains: "phy" (60MHz UTMI clock, created here, also LUNA's "usb" domain), "usb_960" (960MHz
-PHY oversampling clock, created here), "gclk" (video and audio samples).
+Clock domains: "phy" (60MHz UTMI clock, created here), "usb" (LiteUSB core, same 60MHz UTMI clock
+with its own reset), "usb_960" (960MHz PHY oversampling clock, created here), "gclk" (video and
+audio samples).
 """
 
 from types import SimpleNamespace
@@ -33,14 +34,14 @@ from litex.soc.cores.usb2_phy.gowin_gw5a import GW5AUSB2PHYCRG
 
 from chromatix.gateware.usb_class import *
 from chromatix.gateware.usb_desc  import USBDescriptors, VIDEO_FRAMES
-from chromatix.gateware.usb_luna  import LUNAUSBController, USBDescriptorRequest
+from chromatix.gateware.usb_core  import USBDeviceCore, USBDescriptorRequest
 
 # USB Device ---------------------------------------------------------------------------------------
 
 class USBDevice(LiteXModule):
     """
     USB composite device (UVC + UAC + CDC-ACM) with its own PLL (clk_24 -> 60MHz "phy" / 960MHz
-    "usb_960"), LUNA USB 2.0 device core and LiteX UTMI PHY (USB2PHY).
+    "usb_960"), LiteUSB USB 2.0 device core and LiteX UTMI PHY (USB2PHY).
     """
     def __init__(self, platform, clk_24, pads, uvc_frames=VIDEO_FRAMES, with_utmi_monitor=False,
         with_cdc_stream=False):
@@ -95,47 +96,47 @@ class USBDevice(LiteXModule):
             self.cd_phy.rst.eq(rst),
         ]
 
-        # Start-up: disconnected (PHY/LUNA in reset, no pull-up) for 100ms after the reset, so that the
+        # Start-up: disconnected (PHY/core in reset, no pull-up) for 100ms after the reset, so that the
         # host sees a clean connection once the PHY is running (as after a disconnect).
         startup_cnt = Signal(max=int(0.1*60e6) + 1)
         startup     = Signal()
         self.sync.phy += If(rst, startup_cnt.eq(0)).Elif(startup, startup_cnt.eq(startup_cnt + 1))
         self.comb += startup.eq(startup_cnt != int(0.1*60e6))
 
-        # LUNA USB 2.0 Device ----------------------------------------------------------------------
-        self.luna = luna = ClockDomainsRenamer("phy")(LUNAUSBController(platform, reset=rst | startup))
+        # LiteUSB USB 2.0 Device -------------------------------------------------------------------
+        self.core = core = USBDeviceCore(reset=rst | startup)
         usbrst = Signal()
-        self.comb += usbrst.eq(luna.bus_reset)
+        self.comb += usbrst.eq(core.bus_reset)
 
         # USB 2.0 PHY ------------------------------------------------------------------------------
         self.phy_crg = phy_crg = GW5AUSB2PHYCRG(cd_utmi="phy", cd_960="usb_960")
         self.phy = usb_phy = USB2PHY(pads, cd_utmi="phy", serdes_rst=phy_crg.serdes_rst)
         self.comb += [
             usb_phy.reset.eq(rst | startup),
-            usb_phy.tx_data.eq(luna.utmi_tx_data),
-            usb_phy.tx_valid.eq(luna.utmi_tx_valid & ~startup),
-            usb_phy.op_mode.eq(Mux(startup, 0, luna.utmi_op_mode)),
-            usb_phy.xcvr_select.eq(Mux(startup, 0b01, luna.utmi_xcvr_select)),
-            usb_phy.term_select.eq(luna.utmi_term_select & ~startup),
-            luna.utmi_rx_data.eq(usb_phy.rx_data),
-            luna.utmi_tx_ready.eq(usb_phy.tx_ready),
-            luna.utmi_rx_valid.eq(usb_phy.rx_valid),
-            luna.utmi_rx_active.eq(usb_phy.rx_active),
-            luna.utmi_rx_error.eq(usb_phy.rx_error),
-            luna.utmi_line_state.eq(usb_phy.line_state),
+            usb_phy.tx_data.eq(core.utmi_tx_data),
+            usb_phy.tx_valid.eq(core.utmi_tx_valid & ~startup),
+            usb_phy.op_mode.eq(Mux(startup, 0, core.utmi_op_mode)),
+            usb_phy.xcvr_select.eq(Mux(startup, 0b01, core.utmi_xcvr_select)),
+            usb_phy.term_select.eq(core.utmi_term_select & ~startup),
+            core.utmi_rx_data.eq(usb_phy.rx_data),
+            core.utmi_tx_ready.eq(usb_phy.tx_ready),
+            core.utmi_rx_valid.eq(usb_phy.rx_valid),
+            core.utmi_rx_active.eq(usb_phy.rx_active),
+            core.utmi_rx_error.eq(usb_phy.rx_error),
+            core.utmi_line_state.eq(usb_phy.line_state),
         ]
         if with_utmi_monitor:
             utmi = SimpleNamespace(
-                txvalid    = luna.utmi_tx_valid,
+                txvalid    = core.utmi_tx_valid,
                 txready    = usb_phy.tx_ready,
-                dataout    = luna.utmi_tx_data,
+                dataout    = core.utmi_tx_data,
                 rxactive   = usb_phy.rx_active,
                 rxvalid    = usb_phy.rx_valid,
                 datain     = usb_phy.rx_data,
                 linestate  = usb_phy.line_state,
-                termselect = luna.utmi_term_select,
-                xcvrselect = luna.utmi_xcvr_select,
-                opmode     = luna.utmi_op_mode,
+                termselect = core.utmi_term_select,
+                xcvrselect = core.utmi_xcvr_select,
+                opmode     = core.utmi_op_mode,
             )
             self.utmi_monitor = UTMIMonitor(utmi)
 
@@ -148,13 +149,13 @@ class USBDevice(LiteXModule):
 
         # EP0: class/descriptor request handlers ---------------------------------------------------
         setup = SimpleNamespace(
-            header_ready  = luna.ep0_header_ready,
-            bmRequestType = luna.ep0_bmRequestType,
-            bRequest      = luna.ep0_bRequest,
-            wValue        = luna.ep0_wValue,
-            wIndex        = luna.ep0_wIndex,
-            wLength       = luna.ep0_wLength,
-            cdata_ofs     = luna.ep0_cdata_ofs,
+            header_ready  = core.ep0_header_ready,
+            bmRequestType = core.ep0_bmRequestType,
+            bRequest      = core.ep0_bRequest,
+            wValue        = core.ep0_wValue,
+            wIndex        = core.ep0_wIndex,
+            wLength       = core.ep0_wLength,
+            cdata_ofs     = core.ep0_cdata_ofs,
         )
         handlers = []
         for name, cls, kwargs in [
@@ -165,10 +166,10 @@ class USBDevice(LiteXModule):
             self.add_module(name=name, module=h)
             self.comb += [
                 h.reset.eq(rst),
-                h.rxdat.eq(luna.ep0_rxdat),
-                h.rxact.eq(luna.ep0_rxact),
-                h.rxval.eq(luna.ep0_rxval),
-                h.txpop.eq(luna.ep0_txpop),
+                h.rxdat.eq(core.ep0_rxdat),
+                h.rxact.eq(core.ep0_rxact),
+                h.rxval.eq(core.ep0_rxval),
+                h.txpop.eq(core.ep0_txpop),
             ]
             handlers.append(h)
         ctrl_uart = handlers[0]
@@ -178,11 +179,11 @@ class USBDevice(LiteXModule):
         # EP0 data: first active handler.
         ep0_cases = None
         for h in handlers:
-            stmt = [luna.ep0_txdat.eq(h.txdat), luna.ep0_txlen.eq(h.txdat_len)]
+            stmt = [core.ep0_txdat.eq(h.txdat), core.ep0_txlen.eq(h.txdat_len)]
             ep0_cases = If(h.txval, *stmt) if ep0_cases is None else ep0_cases.Elif(h.txval, *stmt)
         self.comb += [
             ep0_cases,
-            luna.ep0_txval.eq(Reduce("OR", [h.txval for h in handlers])),
+            core.ep0_txval.eq(Reduce("OR", [h.txval for h in handlers])),
         ]
 
         # Interfaces alternate settings.
@@ -192,19 +193,19 @@ class USBDevice(LiteXModule):
             self.add_module(name=f"alt_iface{iface}", module=a)
             self.comb += [
                 a.reset.eq(rst | usbrst),
-                a.update.eq(luna.ep0_inf_set & (luna.ep0_inf_sel == iface)),
-                a.alt_i.eq(luna.ep0_inf_alt_o),
+                a.update.eq(core.ep0_inf_set & (core.ep0_inf_sel == iface)),
+                a.alt_i.eq(core.ep0_inf_alt_o),
             ]
             alts[iface] = a
-        self.comb += Case(luna.ep0_inf_sel, {
-            **{iface: luna.ep0_inf_alt_i.eq(a.alt_o) for iface, a in alts.items()},
-            "default": luna.ep0_inf_alt_i.eq(0),
+        self.comb += Case(core.ep0_inf_sel, {
+            **{iface: core.ep0_inf_alt_i.eq(a.alt_o) for iface, a in alts.items()},
+            "default": core.ep0_inf_alt_i.eq(0),
         })
 
         # UVC (EP2) --------------------------------------------------------------------------------
         self.uvc = uvc = ClockDomainsRenamer({"sys": "phy", "video": "gclk"})(UVCVideo(frames=uvc_frames))
         uvc_txact = Signal()
-        self.sync.phy += If(luna.ep2_requested, uvc_txact.eq(1)).Elif(luna.ep2_finished, uvc_txact.eq(0))
+        self.sync.phy += If(core.ep2_requested, uvc_txact.eq(1)).Elif(core.ep2_finished, uvc_txact.eq(0))
         self.comb += [
             uvc.reset.eq(rst),
             uvc.frame_index.eq(self.ctrl_uvc.frame_index),
@@ -213,12 +214,12 @@ class USBDevice(LiteXModule):
             uvc.enable.eq(self.enable),
             uvc.frame_valid.eq(self.frame_valid),
             uvc.data.eq(self.video),
-            uvc.sof.eq(luna.sof),
+            uvc.sof.eq(core.sof),
             uvc.txact.eq(uvc_txact),
-            uvc.txpop.eq(luna.ep2_ready),
-            luna.ep2_data.eq(uvc.txdat),
-            luna.ep2_valid.eq(1),
-            luna.ep2_bytes.eq(uvc.next_len),
+            uvc.txpop.eq(core.ep2_ready),
+            core.ep2_data.eq(uvc.txdat),
+            core.ep2_valid.eq(1),
+            core.ep2_bytes.eq(uvc.next_len),
         ]
 
         # UAC (EP5) --------------------------------------------------------------------------------
@@ -227,10 +228,10 @@ class USBDevice(LiteXModule):
             uac.reset.eq(rst),
             uac.left.eq(self.left),
             uac.right.eq(self.right),
-            uac.txpop.eq(luna.ep5_ready),
-            luna.ep5_data.eq(uac.txdat),
-            luna.ep5_valid.eq(1),
-            luna.ep5_bytes.eq(uac.next_len),
+            uac.txpop.eq(core.ep5_ready),
+            core.ep5_data.eq(uac.txdat),
+            core.ep5_valid.eq(1),
+            core.ep5_bytes.eq(uac.next_len),
         ]
 
         # CDC-ACM (EP3) + UART ---------------------------------------------------------------------
@@ -239,10 +240,10 @@ class USBDevice(LiteXModule):
         self.comb += [
             # Device -> host (flushed when no more data is buffered).
             rx_fifo.reset.eq(usbrst | rst),
-            luna.ep3_in_data.eq(rx_fifo.source.data),
-            luna.ep3_in_valid.eq(rx_fifo.source.valid),
-            rx_fifo.source.ready.eq(luna.ep3_in_ready),
-            luna.ep3_in_flush.eq(~rx_fifo.source.valid),
+            core.ep3_in_data.eq(rx_fifo.source.data),
+            core.ep3_in_valid.eq(rx_fifo.source.valid),
+            rx_fifo.source.ready.eq(core.ep3_in_ready),
+            core.ep3_in_flush.eq(~rx_fifo.source.valid),
             # UART control lines.
             self.uart_dtr.eq(ctrl_uart.ctl_sig[0]),
             self.uart_rts.eq(ctrl_uart.ctl_sig[1]),
@@ -250,9 +251,9 @@ class USBDevice(LiteXModule):
         if with_cdc_stream:
             # Byte stream at the USB rate (no UART).
             self.comb += [
-                self.cdc_source.valid.eq(luna.ep3_out_valid),
-                self.cdc_source.data.eq(luna.ep3_out_data),
-                luna.ep3_out_ready.eq(self.cdc_source.ready),
+                self.cdc_source.valid.eq(core.ep3_out_valid),
+                self.cdc_source.data.eq(core.ep3_out_data),
+                core.ep3_out_ready.eq(self.cdc_source.ready),
                 self.cdc_sink.connect(rx_fifo.sink),
             ]
         else:
@@ -261,9 +262,9 @@ class USBDevice(LiteXModule):
                 uart.reset.eq(usbrst | rst),
                 uart.baudrate.eq(ctrl_uart.dte_rate),
                 # USB -> UART (bytes accepted when the UART FIFO is ready: no ready handshake).
-                uart.tx_data.eq(luna.ep3_out_data),
-                uart.tx_valid.eq(luna.ep3_out_valid & uart.tx_ready),
-                luna.ep3_out_ready.eq(uart.tx_ready),
+                uart.tx_data.eq(core.ep3_out_data),
+                uart.tx_valid.eq(core.ep3_out_valid & uart.tx_ready),
+                core.ep3_out_ready.eq(uart.tx_ready),
                 # UART -> USB.
                 rx_fifo.sink.valid.eq(uart.rx_valid),
                 rx_fifo.sink.data.eq(uart.rx_data),
