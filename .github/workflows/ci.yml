@@ -37,9 +37,9 @@ jobs:
           python3 litex_setup.py --config=standard --init --install --user
 
       # Install LiteUSB (USB 2.0 device core, native LiteX/Migen port of LUNA; not part of the LiteX
-      # ecosystem repository list and not published on PyPI: pinned to the 0.2.0 release tag).
+      # ecosystem repository list and not published on PyPI: pinned to the 0.2.1 release tag).
       - name: Install LiteUSB
-        run: python3 -m pip install --user --no-build-isolation git+https://github.com/hansfbaier/liteusb@0.2.0
+        run: python3 -m pip install --user --no-build-isolation git+https://github.com/hansfbaier/liteusb@0.2.1
 
       # Install ChromatiX (same as litex_setup.py for LiteX repositories).
       - name: Install ChromatiX
