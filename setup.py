@@ -25,7 +25,7 @@ setup(
         "litei2c",
         # LiteUSB USB 2.0 device core (native Migen/LiteX port of LUNA, not on PyPI: a local
         # checkout/editable install is expected, as the other LiteX ecosystem cores; CI installs
-        # the 0.2.0 release tag from GitHub).
+        # a release tag from GitHub - see the "Install LiteUSB" step in .github/workflows/ci.yml).
         "liteusb",
         "usb-protocol==0.9.2",
     ],
