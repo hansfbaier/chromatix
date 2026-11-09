@@ -54,7 +54,7 @@ def test_rom_init():
     with pytest.raises(ValueError):
         check_rom(rom[:0x100])
     with pytest.raises(ValueError):
-        check_rom(rom[:0x147] + bytes([0x0f]) + rom[0x148:]) # MBC3.
+        check_rom(rom[:0x147] + bytes([0x20]) + rom[0x148:]) # MBC6.
 
 # Simulation ---------------------------------------------------------------------------------------
 
@@ -87,6 +87,17 @@ def test_sim_buttons(sim_build):
         presses=parse_button_sequence("a@40+5"))
     assert stripes(ppms[1]) == [WHITE, BLACK, WHITE, BLACK] # Frame 30.
     assert stripes(ppms[2]) == [BLACK, WHITE, BLACK, WHITE] # Frame 60.
+
+def test_sim_save(sim_build, tmp_path):
+    """Cartridge RAM loaded from the save file (palette), written back at the end (counter)."""
+    sim, gateware = sim_build
+    save = tmp_path / "test.sav"
+    save.write_bytes(bytes([0x1b, 0x05]) + bytes(8190))
+    ppms = sim.run_sim(gateware, make_test_rom(save=True), frames=31, every=30, save=str(save))
+    assert stripes(ppms[-1]) == [BLACK, WHITE, BLACK, WHITE] # Palette 0x1b from the save.
+    data = save.read_bytes()
+    assert len(data) == 8192
+    assert data[:2] == bytes([0x1b, 0x06])                   # Counter incremented.
 
 # Simulation (Virtual Cartridge) -------------------------------------------------------------------
 
@@ -137,3 +148,32 @@ def test_sim_video(sim_build_video):
     out6 = [tuple(c >> 2 for c in p) for p in out.getdata()]
     assert out6 == [tuple(2*c for c in p) for p in gb5]
     assert stripes(ppms[-1]) == [WHITE, BLACK, WHITE, BLACK]
+
+# Simulation (Window) ------------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def sim_build_window(tmp_path_factory):
+    if shutil.which("verilator") is None or shutil.which("ghdl") is None:
+        pytest.skip("Verilator/GHDL not installed.")
+    if shutil.which("sdl2-config") is None:
+        pytest.skip("SDL2 not installed.")
+    sim      = load_sim()
+    gateware = str(tmp_path_factory.mktemp("sim_window") / "gateware")
+    sim.build_sim(gateware, make_test_rom(), window=True)
+    return sim, gateware
+
+def test_sim_window(sim_build_window, monkeypatch, tmp_path):
+    """Window (gbwindow module, headless SDL): the displayed frame is the Game Boy LCD frame, audio
+    recorded to a WAV file (32768Hz stereo, simulation time)."""
+    import wave
+    from PIL import Image
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    sim, gateware = sim_build_window
+    wav = tmp_path / "audio.wav"
+    sim.run_window(gateware, make_test_rom(), frames=31, screenshot_frame=30, wav=str(wav))
+    shot = Image.open(os.path.join(gateware, "screenshot_0000.bmp")).convert("RGB")
+    assert shot.size == (160, 144)
+    assert [shot.getpixel((x, 70)) for x in (0, 8, 16, 24)] == [WHITE, BLACK, WHITE, BLACK]
+    with wave.open(str(wav)) as w:
+        assert (w.getframerate(), w.getnchannels(), w.getsampwidth()) == (32768, 2, 2)
+        assert 0.4 < w.getnframes()/32768 < 0.7 # 31 frames (+ boot).
